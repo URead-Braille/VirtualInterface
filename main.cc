@@ -149,9 +149,12 @@ bstring mainmenu[] = {
 {9, {capital, braille['S'], braille['h'], braille['u'], braille['t'], braille['d'], braille['o'], braille['w'], braille['n']}}
 };
 
+struct termios oldattrs;
+
 int main(){
 	struct termios attrs;
-	tcgetattr(0,&attrs);
+	tcgetattr(0,&oldattrs);
+	memcpy(&attrs, &oldattrs, sizeof(struct termios));
 	attrs.c_lflag &= ~(ICANON | ECHO);
 	attrs.c_cc[VMIN] = 1;
 	attrs.c_cc[VTIME] = 0;
@@ -211,11 +214,15 @@ void menu(){
 				import();
 				break;
 			case 5:
-				//shutdown();
-				exit(0);
+				shutdown();
 				break;
 		}
 	}
+}
+
+void shutdown(){
+	tcsetattr(0, TCSANOW, &oldattrs);
+	exit(0);
 }
 
 int choose(int start, int num){
@@ -330,10 +337,11 @@ void import(){
 	char* msg = "No usb drive detected";
 	int c;
 	for(c=0; c<mainmenu[4].len; c++){
-		setchar(0,c,mainmenu[4].data[c]);
+		setchar(0,c+3,mainmenu[4].data[c]);
 	}
+	setchar(1,0,capital);
 	for(c=0; c<strlen(msg); c++){
-		setchar(1,c,braille[msg[c]]);
+		setchar(1,c+1,braille[msg[c]]);
 	}
 	char ch;
 	while(1){
@@ -373,7 +381,6 @@ void reader(int fd){
 }
 
 void setchar(int cellr, int cellc, bcell cell){
-	char bitmap;
 	int r, c;
 	for(r=0; r<3; r++){
 		for(c=0; c<2; c++){
@@ -397,5 +404,6 @@ void set(int cellr, int cellc, int r, int c, bcell on){
 	else{
 		printf(" ");
 	}
+	printf("\033[%d;%dH",25,0);
 	fflush(stdout);
 }
