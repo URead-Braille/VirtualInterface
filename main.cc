@@ -6,8 +6,14 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
+#include "main.h"
 
-char braille[] = {
+bcell capital = 0x20;  //0b100000
+bcell number = 0x17; //0b010111
+bcell blank = 0x00; //0b000000
+
+bcell braille[] = {
 0x00,   // 0b000000 NULL
 0x00,   // 0b000000 START OF HEADING
 0x00,   // 0b000000 START OF TEXT
@@ -48,7 +54,10 @@ char braille[] = {
 0x00,   // 0b000000 %
 0x00,   // 0b000000 &
 0x00,   // 0b010000 '
+0x00,   // 0b111100 )
+0x00,   // 0b111100 (
 0x00,   // 0b000000 *
+0x04,   // 0b000000 +
 0x04,   // 0b000100 ,
 0x30,   // 0b110000 -
 0x0D,   // 0b001101 .
@@ -92,12 +101,12 @@ char braille[] = {
 0x1E,   // 0b011110 T
 0x31,   // 0b110001 U
 0x35,   // 0b110101 V
-0x3E,   // 0b101110 W
+0x2E,   // 0b101110 W
 0x33,   // 0b110011 X
 0x3B,   // 0b111011 Y
 0x39,   // 0b111001 Z
 0x00,   // 0b000000 [
-0x00,   // 0b000000 \
+0x00,   // 0b000000 '\'
 0x00,   // 0b000000 ]
 0x00,   // 0b000000 ^
 0x00,   // 0b000000 _
@@ -124,75 +133,243 @@ char braille[] = {
 0x1E,   // 0b011110 t
 0x31,   // 0b110001 u
 0x35,   // 0b110101 v
-0x3E,   // 0b101110 w
+0x2E,   // 0b101110 w
 0x33,   // 0b110011 x
 0x3B,   // 0b111011 y
 0x39   // 0b111001 z
 };
 
-char* def = "/data/sample.pdf";
-
-void setchar(int, int, char);
-void set(int, int, int, int, char);
-void clear();
-void go(char*, int);
+bstring mainmenu[] = {
+{14, {blank, blank, capital, braille['M'], braille['a'], braille['i'], braille['n'], blank, capital, braille['M'], braille['e'], braille['n'], braille['u']}},
+{7, {capital, braille['R'], braille['e'], braille['s'], braille['u'], braille['m'], braille['e']}},
+{10, {capital, braille['B'], braille['o'], braille['o'], braille['k'], braille['m'], braille['a'], braille['r'], braille['k'], braille['s']}},
+{7, {capital, braille['B'], braille['r'], braille['o'], braille['w'], braille['s'], braille['e']}},
+{7, {capital, braille['I'], braille['m'], braille['p'], braille['o'], braille['r'], braille['t']}},
+{9, {capital, braille['S'], braille['h'], braille['u'], braille['t'], braille['d'], braille['o'], braille['w'], braille['n']}}
+};
 
 int main(){
-	clear();
-	go(def, strlen(def));
+	struct termios attrs;
+	tcgetattr(0,&attrs);
+	attrs.c_lflag &= ~(ICANON | ECHO);
+	attrs.c_cc[VMIN] = 1;
+	attrs.c_cc[VTIME] = 0;
+	tcsetattr(0, TCSANOW, &attrs);
+	menu();
+	printf("Hit error!\n");
 	while(1){
 		sleep(1);
 	}
 }
 
-void go(char* filename, int len){
-	FILE *stream;
-	if(len >= 4 && strcasecmp(&filename[len-4],".pdf")==0){
-		char* argv[] = {"/pdftotext", filename, "/data/temp.txt", NULL};
-		char* envp[] = {NULL};
-		if(fork()==0){
-			execve(argv[0], argv, envp);
-			exit(1);
-		}
-		int status;
-		do{
-			wait(&status);
-		} while(!WIFEXITED(status));
-		stream = fopen("/data/temp.txt","r");
+bstring loctopage(int loc){
+	bstring *ans = malloc(sizeof(bstring));
+	int p = loc/(COLS*(ROWS-1))+1;
+	int r;
+	for(r = ROWS-1; r>=0; r--){
+		int t = x/10;
+		ans->data[r] = braille['0'+(x-10*t)];
+		x = t;
+		if(x==0) break;
 	}
-	else{
-		FILE* stream = fopen(filename, "r");
+	ans->data[r] = number;
+	while(r>=0){
+		ans.data[r]=blank;
+		r--;
 	}
-	int r = 0, c = 0, i = 0;
-	for(i = 0; i < 10; i++){
-		int ch = fgetc(stream);
-		if(ch == EOF){
-			break;
+	ans->len = ROWS;
+}
+
+void menu(){
+	int r,c;
+	int i = 1;
+	while(1){
+		clear();
+		for(r=0; r<6; r++){
+			for(c=0; c<mainmenu[r].len; c++){
+				setchar(r,c+1,mainmenu[r].data[c]);
+			}
 		}
-		else if(ch == '\n'){
-			r++;
-			c=0;
-		}
-		else{
-			setchar(0,i,ch);
-			c++;
+		int oldi = i;
+		i = select(i,6);
+		switch(i){
+			case -1:
+				i=oldi;
+				break;
+			case 1:
+				resume();
+				break;
+			case 2:
+				bookmarks();
+				break;
+			case 3:
+				browse();
+				break;
+			case 4:
+				import();
+				break;
+			case 5:
+				//shutdown();
+				exit(0);
+				break;
 		}
 	}
 }
 
-void setchar(int cellr, int cellc, char ch){
+int select(int start, int num){
+	uint8_t select=start;
+	setchar(select,0,0xFF);
+	char c;
+	while(1){
+		uint8_t newselect=select;
+		read(0, &c, 1);
+		switch(c){
+			case 'a':
+				newselect = select-1;
+				break;
+			case 'd':
+				newselect = select+1;
+				break;
+			case '\n':
+				return select;
+			case ' ':
+				return -1;
+			default:
+				newselect = c-'0';
+		}
+		if(newselect>=1 && newselect<num){
+			setchar(select,0,0);
+			select=newselect;
+			setchar(select,0,0xFF);
+		}
+	}
+}
+
+void resume(){
+	int fd = open("/lastfile", O_RDWR);
+	if(fd < 0){
+		fd = open("/help", O_RDWR);
+	}
+	read(fd);
+	close(fd);
+}
+
+void bookmarks(){
+	int s=1;
+	while(1){
+		clear()
+		for(c=0; c<mainmenu[2].len; c++){
+			setchar(0,c+3,mainmenu[2].data[c]);
+		}
+		int bfd = open("/bookmarks", O_RDONLY);
+		int r;
+		int p = 0;
+		int fd[ROWS-1];
+		for(r=1; r<ROWS; r++){
+			uint32_t loc;
+			char filename[71];
+			filename[0] = '/data/';
+			filename[70]= '\0';
+			read(bfd, &filename[6], 64);
+			read(bfd, &loc, 4);
+			bstring *line = loctopage(loc);
+			int fd[r-1] = open(filename, O_RDWR);
+			read(fd[r-1], &line[1], ROWS-4);
+			int c;
+			for(c=0; c<COLS; c++){
+				setchar(r,c+1,line.data[c]);
+			}
+		}
+		s = select(s,ROWS-1);
+		if(s == -1) return;
+		read(fd[s-1]);
+	}
+}
+
+void browse(){
+	int s=1;
+	while(1){
+		clear();
+		for(c=0; c<mainmenu[3].len; c++){
+			setchar(0,c+3,mainmenu[3].data[c]);
+		}
+		char* a = " hello";
+		char* b = " world";
+		int c;
+		for(c=0; c<strlen(a); c++){
+			setchar(1,c,braille[a[c]]);
+		}
+		for(c=0; c<strlen(b); c++){
+			setchar(1,c,braille[b[c]]);
+		}
+		s = select(s, 2);
+		if(s == -1) return;
+		else if(s == 1){
+			int fd = open("/hello",O_RDWR);
+			read(fd);
+			close(fd);
+		}
+		else{
+			int fd = open("/world", O_RDWR);
+			read(fd);
+			close(fd);
+		}
+	}
+}
+
+void import(){
+	clear();
+	char* msg = "No usb drive detected";
+	for(c=0; c<mainmenu[4].len; c++){
+		setchar(0,c,mainmenu[4].data);
+	}
+	for(c=0; c<strlen(msg); c++){
+		setchar(1,c,braille[msg[c]]);
+	}
+	char c;
+	while(1){
+		read(0, &c, 1);
+		if(c==' '){
+			return
+		}
+	}
+}
+
+void read(int fd, bcell[] top){
+	clear();
+	int r,c;
+	for(c=0; c<COLS; c++){
+		setchar(0,c,top[c]);
+	}
+	braille grid[ROWS-1][COLS];
+	while(1){
+		read(fd, grid, sizeof(grid));
+		for(r=1; r<ROWS; r++){
+			for(c=0; c<COLS; c++){
+				setchar(r,c,grid[r][c]);
+			}
+		}
+		char c;
+		while(1){
+			read(0, &c, 1);
+			if(c == ' ') return;
+			if(c == 'a'){
+				//Not implemented
+			}
+			if(c == 'd'){
+				//Not implemented
+			}
+		}
+	}
+}
+
+void setchar(int cellr, int cellc, bcell cell){
 	char bitmap;
-	if(ch >= sizeof(braille)){
-		bitmap = 0;
-	}
-	else{
-		bitmap = braille[ch];
-	}
 	int r, c;
 	for(r=0; r<3; r++){
 		for(c=0; c<2; c++){
-			set(cellr, cellc, r, c, bitmap&1);
-			bitmap = bitmap >> 1;
+			set(cellr, cellc, r, c, cell&1);
+			cell = cell >> 1;
 		}
 	}
 }
@@ -201,15 +378,15 @@ void clear(){
 	printf("\033[2J");
 }
 
-void set(int cellr, int cellc, int r, int c, char on){
+void set(int cellr, int cellc, int r, int c, bcell on){
 	int row = r+cellr*4+1;
 	int col = c+cellc*3+1;
 	printf("\033[%d;%dH",row,col);
 	if(on){
-		printf("+");
+		printf("\333");
 	}
 	else{
-		printf("-");
+		printf(" ");
 	}
 	fflush(stdout);
 }
