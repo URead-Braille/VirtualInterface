@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <termios.h>
 #include "main.h"
 
@@ -162,9 +163,9 @@ int main(){
 	}
 }
 
-bstring loctopage(int loc){
-	bstring *ans = malloc(sizeof(bstring));
-	int p = loc/(COLS*(ROWS-1))+1;
+bstring *loctopage(int loc){
+	bstring *ans = (bstring*)malloc(sizeof(bstring));
+	int x = loc/(COLS*(ROWS-1))+1;
 	int r;
 	for(r = ROWS-1; r>=0; r--){
 		int t = x/10;
@@ -174,10 +175,11 @@ bstring loctopage(int loc){
 	}
 	ans->data[r] = number;
 	while(r>=0){
-		ans.data[r]=blank;
+		ans->data[r]=blank;
 		r--;
 	}
 	ans->len = ROWS;
+	return ans;
 }
 
 void menu(){
@@ -191,7 +193,7 @@ void menu(){
 			}
 		}
 		int oldi = i;
-		i = select(i,6);
+		i = choose(i,6);
 		switch(i){
 			case -1:
 				i=oldi;
@@ -216,31 +218,31 @@ void menu(){
 	}
 }
 
-int select(int start, int num){
-	uint8_t select=start;
-	setchar(select,0,0xFF);
+int choose(int start, int num){
+	uint8_t s=start;
+	setchar(s,0,0xFF);
 	char c;
 	while(1){
-		uint8_t newselect=select;
+		uint8_t newselect=s;
 		read(0, &c, 1);
 		switch(c){
 			case 'a':
-				newselect = select-1;
+				newselect = s-1;
 				break;
 			case 'd':
-				newselect = select+1;
+				newselect = s+1;
 				break;
 			case '\n':
-				return select;
+				return s;
 			case ' ':
 				return -1;
 			default:
 				newselect = c-'0';
 		}
 		if(newselect>=1 && newselect<num){
-			setchar(select,0,0);
-			select=newselect;
-			setchar(select,0,0xFF);
+			setchar(s,0,0);
+			s=newselect;
+			setchar(s,0,0xFF);
 		}
 	}
 }
@@ -250,14 +252,15 @@ void resume(){
 	if(fd < 0){
 		fd = open("/help", O_RDWR);
 	}
-	read(fd);
+	reader(fd);
 	close(fd);
 }
 
 void bookmarks(){
 	int s=1;
+	int c;
 	while(1){
-		clear()
+		clear();
 		for(c=0; c<mainmenu[2].len; c++){
 			setchar(0,c+3,mainmenu[2].data[c]);
 		}
@@ -268,26 +271,32 @@ void bookmarks(){
 		for(r=1; r<ROWS; r++){
 			uint32_t loc;
 			char filename[71];
-			filename[0] = '/data/';
+			filename[0] = '/';
+			filename[1] = 'd';
+			filename[2] = 'a';
+			filename[3] = 't';
+			filename[4] = 'a';
+			filename[5] = '/';
 			filename[70]= '\0';
 			read(bfd, &filename[6], 64);
 			read(bfd, &loc, 4);
 			bstring *line = loctopage(loc);
-			int fd[r-1] = open(filename, O_RDWR);
-			read(fd[r-1], &line[1], ROWS-4);
+			fd[r-1] = open(filename, O_RDWR);
+			read(fd[r-1], &line->data[1], ROWS-4);
 			int c;
 			for(c=0; c<COLS; c++){
-				setchar(r,c+1,line.data[c]);
+				setchar(r,c+1,line->data[c]);
 			}
 		}
-		s = select(s,ROWS-1);
+		s = choose(s,ROWS-1);
 		if(s == -1) return;
-		read(fd[s-1]);
+		reader(fd[s-1]);
 	}
 }
 
 void browse(){
 	int s=1;
+	int c;
 	while(1){
 		clear();
 		for(c=0; c<mainmenu[3].len; c++){
@@ -295,23 +304,22 @@ void browse(){
 		}
 		char* a = " hello";
 		char* b = " world";
-		int c;
 		for(c=0; c<strlen(a); c++){
 			setchar(1,c,braille[a[c]]);
 		}
 		for(c=0; c<strlen(b); c++){
 			setchar(1,c,braille[b[c]]);
 		}
-		s = select(s, 2);
+		s = choose(s, 2);
 		if(s == -1) return;
 		else if(s == 1){
 			int fd = open("/hello",O_RDWR);
-			read(fd);
+			reader(fd);
 			close(fd);
 		}
 		else{
 			int fd = open("/world", O_RDWR);
-			read(fd);
+			reader(fd);
 			close(fd);
 		}
 	}
@@ -320,28 +328,29 @@ void browse(){
 void import(){
 	clear();
 	char* msg = "No usb drive detected";
+	int c;
 	for(c=0; c<mainmenu[4].len; c++){
-		setchar(0,c,mainmenu[4].data);
+		setchar(0,c,mainmenu[4].data[c]);
 	}
 	for(c=0; c<strlen(msg); c++){
 		setchar(1,c,braille[msg[c]]);
 	}
-	char c;
+	char ch;
 	while(1){
-		read(0, &c, 1);
-		if(c==' '){
-			return
+		read(0, &ch, 1);
+		if(ch==' '){
+			return;
 		}
 	}
 }
 
-void read(int fd, bcell[] top){
+void reader(int fd){
 	clear();
 	int r,c;
-	for(c=0; c<COLS; c++){
-		setchar(0,c,top[c]);
-	}
-	braille grid[ROWS-1][COLS];
+//	for(c=0; c<COLS; c++){
+//		setchar(0,c,top[c]);
+//	}
+	bcell grid[ROWS-1][COLS];
 	while(1){
 		read(fd, grid, sizeof(grid));
 		for(r=1; r<ROWS; r++){
@@ -349,14 +358,14 @@ void read(int fd, bcell[] top){
 				setchar(r,c,grid[r][c]);
 			}
 		}
-		char c;
+		char ch;
 		while(1){
-			read(0, &c, 1);
-			if(c == ' ') return;
-			if(c == 'a'){
+			read(0, &ch, 1);
+			if(ch == ' ') return;
+			if(ch == 'a'){
 				//Not implemented
 			}
-			if(c == 'd'){
+			if(ch == 'd'){
 				//Not implemented
 			}
 		}
