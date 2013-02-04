@@ -140,18 +140,16 @@ bcell braille[] = {
 0x39   // 0b111001 z
 };
 
-bstring mainmenu[] = {
-{14, {blank, blank, capital, braille['M'], braille['a'], braille['i'], braille['n'], blank, capital, braille['M'], braille['e'], braille['n'], braille['u']}},
-{7, {capital, braille['R'], braille['e'], braille['s'], braille['u'], braille['m'], braille['e']}},
-{10, {capital, braille['B'], braille['o'], braille['o'], braille['k'], braille['m'], braille['a'], braille['r'], braille['k'], braille['s']}},
-{7, {capital, braille['B'], braille['r'], braille['o'], braille['w'], braille['s'], braille['e']}},
-{7, {capital, braille['I'], braille['m'], braille['p'], braille['o'], braille['r'], braille['t']}},
-{9, {capital, braille['S'], braille['h'], braille['u'], braille['t'], braille['d'], braille['o'], braille['w'], braille['n']}}
-};
+bcell mainmenu[] = {capital, braille['M'], braille['a'], braille['i'], braille['n'], blank, capital, braille['M'], braille['e'], braille['n'], braille['u']};
+bcell resume[] = {capital, braille['R'], braille['e'], braille['s'], braille['u'], braille['m'], braille['e']};
+bcell bookmarks[] = {capital, braille['B'], braille['o'], braille['o'], braille['k'], braille['m'], braille['a'], braille['r'], braille['k'], braille['s']};
+bcell browse[] = {capital, braille['B'], braille['r'], braille['o'], braille['w'], braille['s'], braille['e']};
+bcell import[] = {capital, braille['I'], braille['m'], braille['p'], braille['o'], braille['r'], braille['t']};
+bcell shutdown[] = {capital, braille['S'], braille['h'], braille['u'], braille['t'], braille['d'], braille['o'], braille['w'], braille['n']};
 
 struct termios oldattrs;
 
-int main(){
+main(){
 	struct termios attrs;
 	tcgetattr(0,&oldattrs);
 	memcpy(&attrs, &oldattrs, sizeof(struct termios));
@@ -159,47 +157,33 @@ int main(){
 	attrs.c_cc[VMIN] = 1;
 	attrs.c_cc[VTIME] = 0;
 	tcsetattr(0, TCSANOW, &attrs);
-	menu();
-	printf("Hit error!\n");
-	while(1){
-		sleep(1);
-	}
-}
-
-bstring *loctopage(int loc){
-	bstring *ans = (bstring*)malloc(sizeof(bstring));
-	int x = loc/(COLS*(ROWS-1))+1;
-	int r;
-	for(r = ROWS-1; r>=0; r--){
-		int t = x/10;
-		ans->data[r] = braille['0'+(x-10*t)];
-		x = t;
-		if(x==0) break;
-	}
-	ans->data[r] = number;
-	while(r>=0){
-		ans->data[r]=blank;
-		r--;
-	}
-	ans->len = ROWS;
-	return ans;
-}
-
-void menu(){
-	int r,c;
-	int i = 1;
+	uint8_t r,c;
+	uint8_t s = 1;
 	while(1){
 		clear();
-		for(r=0; r<6; r++){
-			for(c=0; c<mainmenu[r].len; c++){
-				setchar(r,c+1,mainmenu[r].data[c]);
-			}
+		for(c=0; c<sizeof(mainmenu); c++){
+			setchar(r,c+3,mainmenu[c]);
+
 		}
-		int oldi = i;
-		i = choose(i,6);
-		switch(i){
-			case -1:
-				i=oldi;
+		for(c=0; c<sizeof(resume); c++){
+			setchar(r,c+1,resume[c]);
+		}
+		for(c=0; c<sizeof(bookmarks); c++){
+			setchar(r,c+1,bookmarks[c]);
+		}
+		for(c=0; c<sizeof(browse); c++){
+			setchar(r,c+1,browse[c]);
+		}
+		for(c=0; c<sizeof(import); c++){
+			setchar(r,c+1,import[c]);
+		}
+		for(c=0; c<sizeof(shutdown); c++){
+			setchar(r,c+1,shutdown[c]);
+		}
+		s = choose(s,6);
+		switch(s){
+			case 0:
+				s=1;
 				break;
 			case 1:
 				resume();
@@ -218,6 +202,25 @@ void menu(){
 				break;
 		}
 	}
+}
+
+bstring *loctopage(uint32_t loc){
+	bstring *ans = (bstring*)malloc(sizeof(bstring));
+	int x = loc/(COLS*(ROWS-1))+1;
+	int r;
+	for(r = ROWS-1; r>=0; r--){
+		int t = x/10;
+		ans->data[r] = braille['0'+(x-10*t)];
+		x = t;
+		if(x==0) break;
+	}
+	ans->data[r] = number;
+	while(r>=0){
+		ans->data[r]=blank;
+		r--;
+	}
+	ans->len = ROWS;
+	return ans;
 }
 
 void shutdown(){
